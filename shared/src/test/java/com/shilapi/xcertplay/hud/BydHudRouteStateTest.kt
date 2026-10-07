@@ -49,6 +49,76 @@ class BydHudRouteStateTest {
     }
 
     @Test
+    fun `overlay shows proceed to route while the current list is empty`() {
+        val state = BydHudRouteState(showProceedToRoute = true)
+        state.accept(
+            BydHudRouteState.ROUTE_GUIDANCE_MANEUVER_UPDATE,
+            tlvs(tlv(0x01, 0, 0), tlv(0x03, 11), tlv(0x08, 2)),
+        )
+
+        // As captured on a Han: ProceedingToRoute, 2.3 km left, empty current-maneuver list.
+        val change = state.accept(
+            BydHudRouteState.ROUTE_GUIDANCE_UPDATE,
+            tlvs(tlv(0x01, 6), tlv(0x07, 0, 0, 0x08, 0xd5), tlv(0x0a, 0, 0, 0, 0), tlv(0x0d)),
+        )
+
+        assertEquals(BydHudRouteChange.GUIDANCE, change)
+        assertEquals(11, state.currentApple()?.type)
+        assertEquals(2261L, state.currentApple()?.remainingMeters)
+    }
+
+    @Test
+    fun `proceed to route also applies when the maneuver arrives after the route update`() {
+        val state = BydHudRouteState(showProceedToRoute = true)
+        state.accept(BydHudRouteState.ROUTE_GUIDANCE_UPDATE, tlvs(tlv(0x01, 6), tlv(0x0d)))
+        state.accept(BydHudRouteState.ROUTE_GUIDANCE_UPDATE, tlvs(tlv(0x0a, 0, 0, 0, 0), tlv(0x0d)))
+
+        val change = state.accept(
+            BydHudRouteState.ROUTE_GUIDANCE_MANEUVER_UPDATE,
+            tlvs(tlv(0x01, 0, 0), tlv(0x03, 11), tlv(0x08, 2)),
+        )
+
+        assertEquals(BydHudRouteChange.GUIDANCE, change)
+        assertEquals(11, state.currentApple()?.type)
+    }
+
+    @Test
+    fun `joining the route replaces proceed to route with the current maneuver`() {
+        val state = BydHudRouteState(showProceedToRoute = true)
+        state.accept(
+            BydHudRouteState.ROUTE_GUIDANCE_MANEUVER_UPDATE,
+            tlvs(tlv(0x01, 0, 0), tlv(0x03, 11), tlv(0x08, 2)),
+        )
+        state.accept(
+            BydHudRouteState.ROUTE_GUIDANCE_MANEUVER_UPDATE,
+            tlvs(tlv(0x01, 0, 1), tlv(0x03, 1), tlv(0x08, 2)),
+        )
+        state.accept(BydHudRouteState.ROUTE_GUIDANCE_UPDATE, tlvs(tlv(0x01, 6), tlv(0x0d)))
+
+        state.accept(
+            BydHudRouteState.ROUTE_GUIDANCE_UPDATE,
+            tlvs(tlv(0x01, 1), tlv(0x0a, 0, 0, 0, 80), tlv(0x0d, 0, 1)),
+        )
+
+        assertEquals(1, state.currentApple()?.type)
+        assertEquals(80, state.currentApple()?.distanceMeters)
+    }
+
+    @Test
+    fun `native outputs keep hiding guidance while proceeding to route`() {
+        val state = BydHudRouteState()
+        state.accept(
+            BydHudRouteState.ROUTE_GUIDANCE_MANEUVER_UPDATE,
+            tlvs(tlv(0x01, 0, 0), tlv(0x03, 11), tlv(0x08, 2)),
+        )
+
+        val change = state.accept(BydHudRouteState.ROUTE_GUIDANCE_UPDATE, tlvs(tlv(0x01, 6), tlv(0x0d)))
+
+        assertEquals(BydHudRouteChange.NONE, change)
+        assertNull(state.current())
+    }
+
+    @Test
     fun `overlay keeps the last instruction across a NoRouteSet handoff`() {
         val state = populatedState(keepAcrossNoRoute = true)
         val before = state.current()

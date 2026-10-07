@@ -37,6 +37,11 @@ internal class BydHudRouteState(
      * Arrived (2) still ends the route. The overlay's own stale window retires a truly ended one.
      */
     private val keepAcrossNoRoute: Boolean = false,
+    /**
+     * While ProceedingToRoute (6) the iPhone sends an empty current-maneuver list and its own card
+     * shows maneuver 0 ("Proceed to the route"). The dashboard overlay shows that maneuver too.
+     */
+    private val showProceedToRoute: Boolean = false,
 ) {
     private data class Maneuver(val type: Int, val drivingSide: Int, val afterRoad: String)
 
@@ -50,6 +55,7 @@ internal class BydHudRouteState(
     private var remainingMeters: Long? = null
     private var emptyListSinceNs: Long? = null
     private var lastRouteUpdateNs: Long? = null
+    private var lastState: Int? = null
 
     fun accept(messageId: Int, payload: ByteArray): BydHudRouteChange {
         if (!validTlvs(payload)) return BydHudRouteChange.NONE
@@ -92,6 +98,7 @@ internal class BydHudRouteState(
         remainingMeters = null
         emptyListSinceNs = null
         lastRouteUpdateNs = null
+        lastState = null
         maneuvers.clear()
         return wasActive
     }
@@ -145,6 +152,10 @@ internal class BydHudRouteState(
         if (state == 0 || state == 2) {
             return if (clear()) BydHudRouteChange.CLEAR else BydHudRouteChange.NONE
         }
+        if (showProceedToRoute && (state ?: lastState) == PROCEEDING_TO_ROUTE && firstManeuver == null) {
+            firstManeuver = PROCEED_TO_ROUTE_INDEX
+        }
+        if (state != null) lastState = state
         // The iPhone briefly sends an empty current list every few seconds and while rerouting. Keep the last
         // maneuver (and the cached 0x5202 details, which are never resent) and hide it only if the list stays
         // empty; the bridges' 1 s tick clears the outputs once current() turns null.
@@ -221,6 +232,8 @@ internal class BydHudRouteState(
         const val ROUTE_GUIDANCE_UPDATE = 0x5201
         const val ROUTE_GUIDANCE_MANEUVER_UPDATE = 0x5202
         private const val TLV_HEADER_BYTES = 4
+        private const val PROCEEDING_TO_ROUTE = 6
+        private const val PROCEED_TO_ROUTE_INDEX = 0
         private const val STALE_ROUTE_NS = 30_000_000_000L
         private const val EMPTY_LIST_HIDE_NS = 3_000_000_000L
     }
