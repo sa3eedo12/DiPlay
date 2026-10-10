@@ -1,5 +1,6 @@
 package com.shilapi.xcertplay.telecom
 
+import android.media.AudioAttributes
 import android.media.MediaRecorder
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -167,13 +168,23 @@ class PhoneAudioRouteControllerTest {
         assertFalse(route.carPlayCallsUseCarAudio())
     }
 
-    @Test fun onlyVoiceCommunicationRecordingsCountAsAVoipCall() {
-        assertTrue(VoipRecordingWatcher.voipActive(listOf(MediaRecorder.AudioSource.VOICE_COMMUNICATION)))
-        assertTrue(VoipRecordingWatcher.voipActive(listOf(MediaRecorder.AudioSource.MIC, MediaRecorder.AudioSource.VOICE_COMMUNICATION)))
-        // Voice notes, video and assistants record from other sources; the phone state mutes plain MIC.
-        assertFalse(VoipRecordingWatcher.voipActive(listOf(MediaRecorder.AudioSource.MIC)))
-        assertFalse(VoipRecordingWatcher.voipActive(listOf(MediaRecorder.AudioSource.CAMCORDER)))
-        assertFalse(VoipRecordingWatcher.voipActive(listOf(MediaRecorder.AudioSource.VOICE_RECOGNITION)))
-        assertFalse(VoipRecordingWatcher.voipActive(emptyList()))
+    @Test fun aVoipCallNeedsBothAVoiceCommunicationRecordingAndPlayback() {
+        val voice = MediaRecorder.AudioSource.VOICE_COMMUNICATION
+        val call = AudioAttributes.USAGE_VOICE_COMMUNICATION
+        assertTrue(VoipCallWatcher.voipActive(listOf(voice), listOf(call)))
+        assertTrue(VoipCallWatcher.voipActive(listOf(MediaRecorder.AudioSource.MIC, voice), listOf(AudioAttributes.USAGE_MEDIA, call)))
+        // BYD's own helpers keep recording for as long as the phone state lasts, but play nothing.
+        assertFalse(VoipCallWatcher.voipActive(listOf(MediaRecorder.AudioSource.VOICE_RECOGNITION, voice), emptyList()))
+        assertFalse(VoipCallWatcher.voipActive(listOf(voice), listOf(AudioAttributes.USAGE_MEDIA)))
+        assertFalse(VoipCallWatcher.voipActive(emptyList(), listOf(call)))
+    }
+
+    @Test fun voiceNotesVideoAndAssistantsNeverCountAsAVoipCall() {
+        // They record from other sources; the phone state mutes plain MIC, so they must never be routed.
+        val call = AudioAttributes.USAGE_VOICE_COMMUNICATION
+        assertFalse(VoipCallWatcher.voipActive(listOf(MediaRecorder.AudioSource.MIC), listOf(call)))
+        assertFalse(VoipCallWatcher.voipActive(listOf(MediaRecorder.AudioSource.CAMCORDER), listOf(call)))
+        assertFalse(VoipCallWatcher.voipActive(listOf(MediaRecorder.AudioSource.VOICE_RECOGNITION), listOf(call)))
+        assertFalse(VoipCallWatcher.voipActive(emptyList(), emptyList()))
     }
 }

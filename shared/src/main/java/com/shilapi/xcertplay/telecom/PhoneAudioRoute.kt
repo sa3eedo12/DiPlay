@@ -1,6 +1,7 @@
 package com.shilapi.xcertplay.telecom
 
 import android.content.Context
+import android.os.Build
 import android.util.Log
 import com.shilapi.xcertplay.hud.BydOutputSettings
 import java.util.concurrent.Executors
@@ -126,7 +127,7 @@ object PhoneAudioRoute {
         Executors.newSingleThreadScheduledExecutor { Thread(it, "diplay-phone-audio").apply { isDaemon = true } }
     }
     @Volatile private var controller: PhoneAudioRouteController? = null
-    private var watcher: VoipRecordingWatcher? = null // guarded by this
+    private var watcher: VoipCallWatcher? = null // guarded by this
     @Volatile private var carPlayCallActive = false
 
     /** Safe to call often; the first call sets everything up and later ones re-read the settings. */
@@ -189,9 +190,10 @@ object PhoneAudioRoute {
 
     @Synchronized
     private fun syncWatcher(context: Context) {
-        val wantWatcher = BydOutputSettings.phoneAudioRouteApps(context)
+        // The recording and playback callbacks the watcher relies on arrive with Android 8.
+        val wantWatcher = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && BydOutputSettings.phoneAudioRouteApps(context)
         if (wantWatcher && watcher == null) {
-            watcher = VoipRecordingWatcher(context) { active -> voipApp(active) }.also { it.start() }
+            watcher = VoipCallWatcher(context) { active -> voipApp(active) }.also { it.start() }
             Log.i(TAG, "watching for voice-over-IP calls in other apps")
         } else if (!wantWatcher && watcher != null) {
             watcher?.stop()
