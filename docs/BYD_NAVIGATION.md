@@ -169,6 +169,20 @@ physical acceptance still needs confirmation on each target firmware: answering/
 from the wheel, caller card and timer on cluster/HUD, microphone routing, cancellation/disable and
 process-death cleanup. The reported live key codes alone do not prove these behaviors.
 
+### Car phone audio (experimental)
+
+Two more settings under **Settings → Advanced → Video and audio**, off by default, let the car's own call processing handle the echo instead of DiPlay's canceller. On a GCC Han (DiLink 3, Android 10) the car's audio layer has a phone state that BYD's Telecom enters for any call (`AudioManager.setCallState(CALL_CLIENT_BT, MODE_IN_CALL)` in the Telecom log). Measured with a test app, not yet with a real CarPlay call:
+
+- Outside that state the `VOICE_COMMUNICATION` microphone has an always-on automatic gain of about +14 to +27 dB and clips, so the echo comes back loud and no software canceller can model it (SpeexDSP removed 0.7 dB).
+- Inside it the same microphone returned digital silence for the far end's echo (100% of 609 frames with the cabin quiet) and still passed a voice, but clipped it harder (about 13% of samples in a 14 s count, against under 1% outside it). The plain `MIC` source is muted in the state.
+
+Any app may register a self-managed Telecom call with the normal permission `MANAGE_OWN_CALLS`, so DiPlay holds one while a call needs the state:
+
+- **Car phone audio for CarPlay calls** holds the call from the iPhone's first call frame until the call ends, plus two seconds so back-to-back calls do not leave the state. While it is on, DiPlay's own echo canceller and the platform effects stay out of the CarPlay call microphone. If Telecom refuses the call, DiPlay's canceller is used again for five minutes (`Telecom refused the call that selects the car's phone audio state` in the log). Applies at the next call.
+- **Car phone audio for VoIP calls in other apps** does the same while another app records from `VOICE_COMMUNICATION`, which is how WhatsApp, Telegram, Zoom and similar apps hold a call. Voice notes, video, assistants and any other recording use other sources and are never routed, because the car mutes the plain microphone in the state. It needs DiPlay running outside a CarPlay session as well, so turning it on also enables the wheel-key accessibility service, and it only watches while that service or a CarPlay session keeps DiPlay alive.
+
+Log tag `DiPlay-PhoneAudio` shows when the state is entered and left. If the car's hands-free link is connected, Telecom already holds a managed call for the iPhone and may refuse a second one; pausing the car's Bluetooth radio during CarPlay avoids that. The louder, clipped voice is the main open question and needs a listening test on the far end.
+
 ## ADB vehicle-data settings and firmware scope
 
 Settings → Location contains **Advanced vehicle data**, collapsed by default, with two saved modes.
