@@ -22,7 +22,7 @@
     <!-- The centre card also follows whichever launcher is the default home. -->
     <queries>
         <package android:name="com.byd.carsettings" />
-        <!-- The cluster ADAS pane setting looks for BYD's cluster test receiver. -->
+        <!-- The cluster ADAS tile setting looks for BYD's cluster test receiver. -->
         <package android:name="com.byd.clusterdebug" />
         <intent>
             <action android:name="android.intent.action.VIEW" />
@@ -90,6 +90,18 @@
                 android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
                 android:resource="@xml/usb_device_filter" />
         </activity>
+
+        <!-- The same CarPlay screen in DiPlay's own task, declared as it was up to 0.2.11, for launchers that show
+             that task in a card or picture-in-picture window (#463). CarPlayScreen chooses between the two. -->
+        <activity
+            android:name="com.shilapi.xcertplay.SameTaskCarPlayHostActivity"
+            android:configChanges="density|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:screenOrientation="fullSensor"
+            android:theme="@style/Theme.Xcertplay"
+            android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name="com.shilapi.xcertplay.AdbClusterActivity"

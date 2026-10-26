@@ -58,7 +58,7 @@ import com.shilapi.xcertplay.backup.SettingsBackupServer
 import com.shilapi.xcertplay.backup.SettingsQrCode
 import com.shilapi.xcertplay.compat.closeCompat
 import com.shilapi.xcertplay.hud.BydAdbAccess
-import com.shilapi.xcertplay.hud.BydClusterAdasPane
+import com.shilapi.xcertplay.hud.BydClusterAdasTile
 import com.shilapi.xcertplay.hud.BydNavigationOutputs
 import com.shilapi.xcertplay.hud.BydFieldSource
 import com.shilapi.xcertplay.hud.BydOutputSettings
@@ -129,7 +129,7 @@ internal enum class SettingsSection {
     NAVIGATION_WHEEL,
     LOCATION,
     CLUSTER_MAP,
-    CLUSTER_ADAS_PANE,
+    CLUSTER_ADAS_TILE,
     LAUNCHER_BUBBLE,
     BYD_NAVIGATION,
     PERMISSIONS_AND_HELP,
@@ -159,7 +159,7 @@ internal object SettingsInformationArchitecture {
         SettingsCategory.DIAGNOSTICS to setOf(SettingsSection.DIAGNOSTICS),
         SettingsCategory.ADVANCED to setOf(
             SettingsSection.CLUSTER_MAP,
-            SettingsSection.CLUSTER_ADAS_PANE,
+            SettingsSection.CLUSTER_ADAS_TILE,
             SettingsSection.LAUNCHER_BUBBLE,
             SettingsSection.EXPERIMENTAL_DISPLAY,
             SettingsSection.ADVANCED_MEDIA,
@@ -199,6 +199,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     private var status: TextView? = null
     private var homeCardTitle: TextView? = null
     private var homeConnectionHint: TextView? = null
+    private var homeLastProblem: TextView? = null
     private var connectButton: Button? = null
     private var disconnectButton: Button? = null
     private var lastRunning: Boolean? = null
@@ -687,7 +688,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
             (settingsSearchExpanded && settingsSearchBox?.hasFocus() == true)
         settingsSearchBox = null
         if (page != "settings") clearSettingsSearchState()
-        status = null; connectButton = null; disconnectButton = null; lastRunning = null; carButtonCard = null
+        status = null; homeLastProblem = null; connectButton = null; disconnectButton = null; lastRunning = null; carButtonCard = null
         reconnectBar = null
         readinessCard = null
         exportButton = null
@@ -976,6 +977,8 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
             val off = if (name.isBlank()) getString(R.string.hotspot_details_off) else getString(R.string.msg_car_hotspot_off, name)
             card.addView(label(off, 15, WARNING).apply { setPadding(0, dp(14), 0, 0) })
             if (!compact) card.addView(homeButton(getString(R.string.open_car_hotspot_settings), false) { openCarWifiSettings() }, matchButton(CONTROL_GAP_DP, 56))
+        } else {
+            homeLastProblem = label("", 15, MUTED).apply { setPadding(0, dp(14), 0, 0) }.also(card::addView)
         }
         card.addView(homeButton(getString(R.string.choose_iphone), false) { choosePhone() }, matchButton(if (compact) CONTROL_GAP_DP else 16, if (compact) 46 else 56))
         disconnectButton = homeButton(getString(R.string.disconnect), false) {
@@ -1908,7 +1911,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
             scheduleTimeControl(scheduleControls, start = false)
             card.addView(scheduleControls)
             card.addView(button(getString(R.string.picture_adjustments), false) {
-                OwnScreenStart.start(this, Intent(this, CarPlayHostActivity::class.java)
+                OwnScreenStart.start(this, CarPlayScreen.intent(this)
                     .putExtra("picture_controls", true).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
             }, matchButton(0, 56).apply { bottomMargin = dp(24) })
             carPlaySizeControl(card)
@@ -1948,6 +1951,12 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                 getString(R.string.settings_harman_fullscreen_experimental_description),
                 AirPlayPersistence.loadHarmanFullscreen(this)) { enabled ->
                 AirPlayPersistence.saveHarmanFullscreen(this, enabled)
+            }
+            toggle(card, getString(R.string.settings_carplay_same_task),
+                getString(R.string.settings_carplay_same_task_description),
+                AirPlayPersistence.loadCarPlaySameTask(this)) { enabled ->
+                AirPlayPersistence.saveCarPlaySameTask(this, enabled)
+                CarPlayScreen.closeIfElsewhere(this)
             }
             toggle(card, getString(R.string.split_screen_areas), getString(R.string.split_screen_areas_description),
                 SplitScreenSettings.enabled(this)) {
@@ -2063,6 +2072,11 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                 AirPlayPersistence.saveSpeechWithout8And16Khz(this, it)
                 reconnectIfRunning()
             }
+            toggle(card, getString(R.string.settings_call_at_call_rate), getString(R.string.settings_call_at_call_rate_description),
+                AirPlayPersistence.loadCallAtCallRate(this)) {
+                AirPlayPersistence.saveCallAtCallRate(this, it)
+                markReconnectNeeded()
+            }
             toggle(card, getString(R.string.settings_car_bluetooth_audio), getString(R.string.settings_car_bluetooth_audio_description),
                 AirPlayPersistence.loadCarBluetoothAudio(this)) {
                 AirPlayPersistence.saveCarBluetoothAudio(this, it)
@@ -2144,10 +2158,10 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
                     else getString(R.string.center_map_overlay_missing, packageName), 14, if (overlay) MUTED else WARNING))
             }
         }
-        // BYD's cluster ADAS pane, hidden or restored by hand while parked (experimental; hides its warnings too).
-        if (BydOutputSettings.available(this)) filteredSection(content, SettingsSection.CLUSTER_ADAS_PANE,
-            getString(R.string.settings_adas_pane_title), R.drawable.ic_dp_dashboard) { card ->
-            clusterAdasPaneControls(card)
+        // BYD's cluster ADAS tile: asks the cluster for the small tile when the car opens the large scene over the map.
+        if (BydOutputSettings.available(this)) filteredSection(content, SettingsSection.CLUSTER_ADAS_TILE,
+            getString(R.string.settings_adas_tile_title), R.drawable.ic_dp_dashboard) { card ->
+            clusterAdasTileControls(card)
         }
         // Cluster video does not require a BYD navigation broadcast receiver.
         filteredSection(content, SettingsSection.CLUSTER_MAP,
@@ -5742,7 +5756,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         else open()
     }
     private fun openProjection() {
-        OwnScreenStart.start(this, Intent(this, CarPlayHostActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
+        OwnScreenStart.start(this, CarPlayScreen.intent(this).addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT))
     }
     private fun choosePhone() {
         if (Build.VERSION.SDK_INT >= 31 && checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
@@ -5856,6 +5870,11 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
             DiPlayPreferences.phoneAddress(this) != null -> "${getString(R.string.status_ready_for_prefix)}${DiPlayPreferences.phoneName(this)}"
             else -> getString(R.string.ready_when_you_are)
         }
+        homeLastProblem?.apply {
+            val line = if (CarPlayBackgroundSession.active) null else LastConnectionProblem.homeLine(this@DiPlayActivity)
+            visibility = if (line == null) View.GONE else View.VISIBLE
+            if (line != null) text = line
+        }
         if (lastRunning != running) {
             connectButton?.text = if (running) getString(R.string.open_carplay) else getString(R.string.connect_phone)
             disconnectButton?.visibility = if (running) View.VISIBLE else View.GONE
@@ -5953,6 +5972,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
     /** The text of a diagnostic report. It reads the session logs, so call it off the main thread. */
     private fun diagnosticReportText(appContext: Context): String = buildString {
         appendLine("DiPlay ${version()} · private beta diagnostic report")
+        appendLine(LastConnectionProblem.report(appContext))
         appendLine("Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}")
         appendLine("Head unit: ${Build.MANUFACTURER} ${Build.MODEL}")
         appendLine("Connection: ${if (AirPlayPersistence.loadWirelessEnabled(appContext)) "wireless" else "USB"}")
@@ -5967,6 +5987,7 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         appendLine("CarPlay size: ${AirPlayPersistence.loadWidthPhysicalMm(appContext).let { mm -> "${com.shilapi.xcertplay.airplay.CarPlaySize.exact(mm)?.label ?: "Custom"}, $mm mm" }}")
         appendLine("Saved resolution preference (may differ from active session): ${AirPlayPersistence.loadDisplayScalePercent(appContext)}%")
         appendLine("Session: ${if (CarPlayBackgroundSession.active) "active" else if (CarPlayBackgroundSession.hasSession()) "connecting" else "stopped"}")
+        appendLine("CarPlay screen: ${CarPlayScreen.report(appContext)}")
         appendLine(PhoneWakeDiagnostics.report(appContext))
         appendLine("Head-unit board: ${Build.BOARD}; hardware: ${Build.HARDWARE}; build: ${Build.DISPLAY}")
         appendLine()
@@ -6058,58 +6079,25 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         }.setNegativeButton(getString(R.string.later), null).show()
     }
     private fun openSystem(intent: Intent) { runCatching { startActivity(intent) }.onFailure { toast(getString(R.string.open_this_setting_from_your_car_s_settings_app)) } }
-    // The cluster's whole ADAS pane, with its distance and lane warnings: hidden only on request while the car is
-    // known to be in P, restored at any time. Nothing is remembered or repeated automatically.
-    internal var adasPaneAvailable: (Context) -> Boolean = BydClusterAdasPane::available
-    internal var adasParkedCheck: (Context) -> Boolean? = com.shilapi.xcertplay.hud.BydNavigationOutputs::parked
-    internal var adasRestore: (Context) -> Boolean = BydClusterAdasPane::restore
-    internal var adasBackground: (() -> Unit) -> Unit = { work -> Thread(work, "diplay-adas-pane").start() }
+    // The cluster's ADAS tile. The car sometimes opens a large ADAS scene over the CarPlay map; with the setting on,
+    // DiPlay asks for the small tile again while the map is on the cluster. Nothing is hidden.
+    internal var adasTileAvailable: (Context) -> Boolean = BydClusterAdasTile::available
+    internal var adasTileShowSmall: (Context) -> Boolean = BydClusterAdasTile::showSmall
 
-    private fun clusterAdasPaneControls(card: LinearLayout) {
-        val available = adasPaneAvailable(applicationContext)
-        card.addView(label(getString(R.string.settings_adas_pane_description), 14, MUTED))
-        if (!available) card.addView(label(getString(R.string.settings_adas_pane_unavailable), 14, WARNING))
-        card.addView(button(getString(R.string.settings_adas_pane_hide), false) { confirmHideAdasPane() }
-            .apply { isEnabled = available }, matchButton(10, 60))
-        card.addView(button(getString(R.string.settings_adas_pane_restore), false) { restoreAdasPane() }
-            .apply { isEnabled = available }, matchButton(10, 60))
-    }
-
-    private fun restoreAdasPane() {
-        val app = applicationContext
-        adasBackground {
-            val restored = adasRestore(app)
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                toast(getString(if (restored) R.string.settings_adas_pane_restore_sent else R.string.settings_adas_pane_restore_failed))
-            }
+    private fun clusterAdasTileControls(card: LinearLayout) {
+        val available = adasTileAvailable(applicationContext)
+        if (!available) card.addView(label(getString(R.string.settings_adas_tile_unavailable), 14, WARNING))
+        toggle(card, getString(R.string.settings_adas_tile_keep_small),
+            getString(R.string.settings_adas_tile_keep_small_description),
+            BydOutputSettings.keepAdasTileSmall(this), enabled = available) {
+            BydOutputSettings.setKeepAdasTileSmall(this, it)
         }
-    }
-
-    private fun confirmHideAdasPane() {
-        appDialogBuilder().setTitle(R.string.settings_adas_pane_hide)
-            .setMessage(R.string.settings_adas_pane_confirm)
-            .setPositiveButton(R.string.settings_adas_pane_hide_action) { _, _ -> hideAdasPaneIfParked() }
-            .setNegativeButton(R.string.cancel, null)
-            .show()
-    }
-
-    private fun hideAdasPaneIfParked() {
-        val app = applicationContext
-        adasBackground {
-            val decision = BydClusterAdasPane.hideDecision(adasPaneAvailable(app), adasParkedCheck(app))
-            val sent = decision == BydClusterAdasPane.HideDecision.ALLOWED && BydClusterAdasPane.hide(app)
-            runOnUiThread {
-                if (isFinishing || isDestroyed) return@runOnUiThread
-                toast(getString(when (decision) {
-                    BydClusterAdasPane.HideDecision.UNAVAILABLE -> R.string.settings_adas_pane_unavailable
-                    BydClusterAdasPane.HideDecision.NOT_PARKED -> R.string.settings_adas_pane_not_parked
-                    BydClusterAdasPane.HideDecision.GEAR_UNKNOWN -> R.string.settings_adas_pane_gear_unknown
-                    BydClusterAdasPane.HideDecision.ALLOWED ->
-                        if (sent) R.string.settings_adas_pane_hide_sent else R.string.settings_adas_pane_send_failed
-                }))
-            }
-        }
+        card.addView(button(getString(R.string.settings_adas_tile_show_small), false) {
+            toast(getString(
+                if (adasTileShowSmall(applicationContext)) R.string.settings_adas_tile_sent
+                else R.string.settings_adas_tile_send_failed,
+            ))
+        }.apply { isEnabled = available }, matchButton(10, 60))
     }
 
     private fun toast(message: String) { Toast.makeText(this, message, Toast.LENGTH_LONG).show() }
@@ -6243,6 +6231,12 @@ class DiPlayActivity : ComponentActivity(), AppAppearanceOwner {
         toggle(dependent, getString(R.string.audio_focus_auto_yield), getString(R.string.audio_focus_auto_yield_desc),
             AirPlayPersistence.loadAudioFocusAutoYield(this)) {
             AirPlayPersistence.saveAudioFocusAutoYield(this, it)
+            markReconnectNeeded()
+        }
+        toggle(dependent, getString(R.string.settings_navigation_prompt_audio_focus),
+            getString(R.string.settings_navigation_prompt_audio_focus_description),
+            AirPlayPersistence.loadNavigationPromptAudioFocus(this)) {
+            AirPlayPersistence.saveNavigationPromptAudioFocus(this, it)
             markReconnectNeeded()
         }
         parent.addView(dependent)
